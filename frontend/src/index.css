@@ -1,0 +1,115 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Base reset ───────────────────────────────────────────── */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+  background-color: #fbf9f5;
+  color: #1a1c19;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Mic button glow ──────────────────────────────────────── */
+
+.mic-glow {
+  box-shadow: 0 0 0 12px rgba(255, 184, 28, 0.15),
+    0 0 0 24px rgba(255, 184, 28, 0.07),
+    0 8px 32px rgba(255, 184, 28, 0.2);
+}
+
+.mic-glow-recording {
+  box-shadow: 0 0 0 8px rgba(255, 184, 28, 0.25),
+    0 0 0 16px rgba(255, 184, 28, 0.12),
+    0 0 40px rgba(255, 184, 28, 0.3);
+  animation: pulse-glow 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 0 8px rgba(255, 184, 28, 0.25),
+      0 0 0 16px rgba(255, 184, 28, 0.12),
+      0 0 40px rgba(255, 184, 28, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 0 14px rgba(255, 184, 28, 0.3),
+      0 0 0 28px rgba(255, 184, 28, 0.15),
+      0 0 60px rgba(255, 184, 28, 0.4);
+  }
+}
+
+/* ── Animated waveform bars ───────────────────────────────── */
+
+.wave-bar {
+  animation: wave-pulse 1.2s ease-in-out infinite;
+  transform-origin: bottom;
+}
+.wave-bar:nth-child(1) { animation-delay: 0s; }
+.wave-bar:nth-child(2) { animation-delay: 0.1s; }
+.wave-bar:nth-child(3) { animation-delay: 0.2s; }
+.wave-bar:nth-child(4) { animation-delay: 0.3s; }
+.wave-bar:nth-child(5) { animation-delay: 0.4s; }
+.wave-bar:nth-child(6) { animation-delay: 0.3s; }
+.wave-bar:nth-child(7) { animation-delay: 0.2s; }
+.wave-bar:nth-child(8) { animation-delay: 0.1s; }
+.wave-bar:nth-child(9) { animation-delay: 0s; }
+
+@keyframes wave-pulse {
+  0%, 100% { transform: scaleY(0.35); }
+  50% { transform: scaleY(1); }
+}
+
+/* ── Dashed loading ring ──────────────────────────────────── */
+
+.loading-ring {
+  border: 3px dashed #2d5a27;
+  border-radius: 50%;
+  animation: spin 3s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Progress bar ─────────────────────────────────────────── */
+
+.progress-track {
+  @apply w-full h-1.5 rounded-full overflow-hidden;
+  background: #efede9;
+}
+
+.progress-fill {
+  @apply h-full rounded-full transition-all duration-200;
+  background: #2d5a27;
+}
+
+/* ── Fade in animation ────────────────────────────────────── */
+
+.fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Scrollbar ────────────────────────────────────────────── */
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d4d0c8; border-radius: 99px; }

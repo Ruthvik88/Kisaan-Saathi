@@ -1,0 +1,50 @@
+{
+  "_note": "Illustrative reference MSP figures for the 2024-25 season, bundled for demo/offline use. These are NOT a live pricing feed. Verify against the official CACP/PIB announcement before relying on them for real farmer decisions.",
+  "crops": [
+    {
+      "crop_name": "Wheat",
+      "crop_name_hi": "गेहूं",
+      "crop_name_te": "గోధుమ",
+      "crop_name_kn": "ಗೋಧಿ",
+      "crop_name_ta": "கோதுமை",
+      "msp_inr_per_quintal": 2275,
+      "season": "Rabi"
+    },
+    {
+      "crop_name": "Rice (Paddy)",
+      "crop_name_hi": "धान",
+      "crop_name_te": "వరి",
+      "crop_name_kn": "ಭತ್ತ",
+      "crop_name_ta": "நெல்",
+      "msp_inr_per_quintal": 2300,
+      "season": "Kharif"
+    },
+    {
+      "crop_name": "Maize",
+      "crop_name_hi": "मक्का",
+      "crop_name_te": "మొక్కజొన్న",
+      "crop_name_kn": "ಮೆಕ್ಕೆಜೋಳ",
+      "crop_name_ta": "மக்காச்சோளம்",
+      "msp_inr_per_quintal": 2225,
+      "season": "Kharif"
+    },
+    {
+      "crop_name": "Cotton (Medium Staple)",
+      "crop_name_hi": "कपास",
+      "crop_name_te": "పత్తి",
+      "crop_name_kn": "ಹತ್ತಿ",
+      "crop_name_ta": "பருத்தி",
+      "msp_inr_per_quintal": 7121,
+      "season": "Kharif"
+    },
+    {
+      "crop_name": "Soybean",
+      "crop_name_hi": "सोयाबीन",
+      "crop_name_te": "సోయాబీన్",
+      "crop_name_kn": "ಸೋಯಾಬೀನ್",
+      "crop_name_ta": "சோயாபீன்",
+      "msp_inr_per_quintal": 4892,
+      "season": "Kharif"
+    }
+  ]
+}
