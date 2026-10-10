@@ -1,18 +1,51 @@
 """
-Speech-to-text using OpenAI's Whisper API (model="whisper-1").
+Speech-to-text using OpenAI's Whisper API (model="whisper-1") or Groq
+(model="whisper-large-v3-turbo").
 
-The OpenAI client is created lazily INSIDE the transcribe function, not at
-module import time, so the app doesn't crash on import if OPENAI_API_KEY is
-temporarily missing.
+Requests response_format="verbose_json" so every transcription comes back
+with per-segment decoding metrics (avg_logprob, no_speech_prob,
+compression_ratio). confidence.py uses those metrics to detect unreliable
+transcripts BEFORE they reach generation.
+
+The OpenAI client is created lazily INSIDE transcribe, not at module import
+time, so the app doesn't crash on import if OPENAI_API_KEY is temporarily
+missing.
 """
 
 import os
 import tempfile
+from dataclasses import dataclass
 from dotenv import load_dotenv
 
 load_dotenv()
 
 _client = None
+
+
+@dataclass
+class TranscriptionResult:
+    """
+    Transcript plus Whisper decoding metrics.
+
+    avg_logprob is the mean of per-segment avg_logprob values (closer to 0
+    is better; very negative means the model was guessing). max_no_speech_prob
+    is the highest per-segment no_speech_prob (high means mostly silence or
+    non-speech). max_compression_ratio is the highest per-segment
+    compression_ratio (high means repetitive/looped output, a classic Whisper
+    hallucination signal).
+
+    When the provider response has no segment data, metrics_available is
+    False and all metric fields stay None — callers must NEVER treat a
+    transcript as unreliable based on metrics in that case.
+    """
+
+    text: str
+    avg_logprob: float | None = None
+    max_no_speech_prob: float | None = None
+    max_compression_ratio: float | None = None
+    duration: float | None = None
+    segment_count: int = 0
+    metrics_available: bool = False
 
 
 def _get_client():
@@ -40,7 +73,76 @@ def _get_client():
     return _client
 
 
-def transcribe(audio_bytes: bytes, lang: str = "hi") -> str:
+def _seg_get(seg, *names):
+    """Read a field from a segment that may be a dict or an object."""
+    for name in names:
+        if isinstance(seg, dict):
+            if name in seg:
+                return seg[name]
+        elif hasattr(seg, name):
+            return getattr(seg, name)
+    return None
+
+
+def _extract_metrics(response) -> TranscriptionResult:
+    """Build a TranscriptionResult from a verbose_json Whisper response.
+
+    Never crashes on missing/unexpected shapes — returns
+    metrics_available=False when no usable segment data is present.
+    """
+    text = ""
+    try:
+        text = (getattr(response, "text", "") or "").strip()
+    except Exception:
+        text = ""
+
+    segments = getattr(response, "segments", None)
+    if not segments:
+        return TranscriptionResult(text=text, metrics_available=False)
+
+    try:
+        segments = list(segments)
+    except TypeError:
+        return TranscriptionResult(text=text, metrics_available=False)
+
+    if not segments:
+        return TranscriptionResult(text=text, metrics_available=False)
+
+    logprobs = []
+    no_speech = []
+    compressions = []
+    for seg in segments:
+        lp = _seg_get(seg, "avg_logprob")
+        ns = _seg_get(seg, "no_speech_prob")
+        cr = _seg_get(seg, "compression_ratio")
+        if isinstance(lp, (int, float)):
+            logprobs.append(float(lp))
+        if isinstance(ns, (int, float)):
+            no_speech.append(float(ns))
+        if isinstance(cr, (int, float)):
+            compressions.append(float(cr))
+
+    if not logprobs and not no_speech and not compressions:
+        return TranscriptionResult(
+            text=text, segment_count=len(segments), metrics_available=False
+        )
+
+    duration = getattr(response, "duration", None)
+    if not isinstance(duration, (int, float)):
+        duration = None
+
+    return TranscriptionResult(
+        text=text,
+        avg_logprob=(sum(logprobs) / len(logprobs)) if logprobs else None,
+        max_no_speech_prob=max(no_speech) if no_speech else None,
+        max_compression_ratio=max(compressions) if compressions else None,
+        duration=float(duration) if duration is not None else None,
+        segment_count=len(segments),
+        metrics_available=True,
+    )
+
+
+def transcribe(audio_bytes: bytes, lang: str = "hi") -> TranscriptionResult:
     """
     Transcribe audio bytes to text using OpenAI/Groq Whisper.
 
@@ -50,7 +152,7 @@ def transcribe(audio_bytes: bytes, lang: str = "hi") -> str:
               Whisper supports te, hi, kn, ta with the same codes directly.
 
     Returns:
-        The transcribed text, stripped of whitespace.
+        TranscriptionResult with the transcript text plus decoding metrics.
 
     Raises:
         Any exception from the API — intentionally not caught here.
@@ -73,9 +175,10 @@ def transcribe(audio_bytes: bytes, lang: str = "hi") -> str:
                 model=model,
                 file=f,
                 language=lang,
+                response_format="verbose_json",
             )
     finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
 
-    return response.text.strip()
+    return _extract_metrics(response)

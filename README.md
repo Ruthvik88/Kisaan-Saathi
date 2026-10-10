@@ -120,6 +120,47 @@ npm run build
 npm run preview
 ```
 
+## Deployment
+
+### Backend — Render (Web Service)
+
+| Setting | Value |
+|---|---|
+| **Root Directory** | `backend` |
+| **Build Command** | `pip install -r requirements.txt` |
+| **Start Command** | `uvicorn main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips="*"` |
+| **PYTHON_VERSION** | `3.13.0` (any 3.12+ works) |
+
+`--proxy-headers` is required so the app sees the real client IP from
+Render's proxy (used by `/ask` rate limiting) instead of the proxy's IP.
+
+**Environment variables** (Render Dashboard → Environment):
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `OPENAI_API_KEY` | Yes | Whisper STT (or Groq key starting with `gsk_`) |
+| `OPENAI_BASE_URL` | Only for custom endpoints | Defaults to Groq when the key starts with `gsk_` |
+| `GEMINI_API_KEY` | Yes | Gemini LLM |
+| `ALLOWED_ORIGINS` | Yes (production) | Comma-separated frontend origin(s), e.g. `https://kisaan-saathi.vercel.app` (no trailing slash). Default: `http://localhost:5173,http://127.0.0.1:5173` |
+| `RATE_LIMIT_ASK` | No | Per-IP limit for `POST /ask`, e.g. `10/minute` (default) |
+| `MAX_CLARIFY_TURNS` | No | Clarification rounds before a final answer (default `2`) |
+| `LOGPROB_THRESHOLD` / `NO_SPEECH_THRESHOLD` / `COMPRESSION_THRESHOLD` / `MIN_TRANSCRIPT_CHARS` | No | STT reliability tuning (defaults `-1.0` / `0.6` / `2.4` / `3`) |
+
+`GET /health` is intentionally NOT rate limited — point Render's health
+check (and any uptime monitor) at `/health`.
+
+### Frontend — Vercel
+
+| Setting | Value |
+|---|---|
+| **Root Directory** | `frontend` |
+| **Framework Preset** | Vite |
+| **Build Command** | `npm run build` (default) |
+| **Environment variable** | `VITE_API_URL=https://<your-render-service>.onrender.com` |
+
+After deploying the frontend, copy its `https://...vercel.app` URL into the
+backend's `ALLOWED_ORIGINS` on Render and redeploy the backend.
+
 ## Troubleshooting
 
 | Problem | Fix |

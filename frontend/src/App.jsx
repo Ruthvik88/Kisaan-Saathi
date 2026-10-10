@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import LanguagePicker, { LANGUAGES } from "./LanguagePicker.jsx";
 import VoiceRecorder from "./VoiceRecorder.jsx";
 import AudioPlayer from "./AudioPlayer.jsx";
-import TranscriptView from "./TranscriptView.jsx";
+import TranscriptView, { decodeBase64Utf8 } from "./TranscriptView.jsx";
 
 const UI = {
   te: {
@@ -18,6 +18,8 @@ const UI = {
     errDesc: "దయచేసి మీ ఇంటర్నెట్ కనెక్షన్ తనిఖీ చేసి మళ్ళీ ప్రయత్నించండి.",
     retry: "మళ్ళీ ప్రయత్నించండి",
     disclaimer: "మంది ధరలు అంచనా మాత్రమే. విక్రయం ముందు స్థానిక మంది వద్ద ధర నిర్ధారించుకోండి.",
+    asksLabel: "కిసాన్ సాథీ అడుగుతున్నారు",
+    answerHint: "బటన్ నొక్కి పట్టుకుని సమాధానం చెప్పండి",
   },
   hi: {
     subtitle: "आपका खेती सहायक",
@@ -32,6 +34,8 @@ const UI = {
     errDesc: "कृपया अपना इंटरनेट कनेक्शन जाँचें और फिर से कोशिश करें.",
     retry: "पुनः प्रयास करें",
     disclaimer: "मंडी भाव अनुमानित हैं। बेचने से पहले अपनी स्थानीय मंडी से भाव की पुष्टि करें।",
+    asksLabel: "किसान साथी पूछ रहे हैं",
+    answerHint: "बटन दबाकर रखें और जवाब दें",
   },
   kn: {
     subtitle: "ನಿಮ್ಮ ಕೃಷಿ ಸಹಾಯಕ",
@@ -46,6 +50,8 @@ const UI = {
     errDesc: "ದಯವಿಟ್ಟು ನಿಮ್ಮ ಇಂಟರ್ನೆಟ್ ಸಂಪರ್ಕವನ್ನು ಪರಿಶೀಲಿಸಿ ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.",
     retry: "ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ",
     disclaimer: "ಮಂಡಿ ಬೆಲೆಗಳು ಅಂದಾಜು ಮಾತ್ರ. ಮಾರಾಟ ಮಾಡುವ ಮೊದಲು ಸ್ಥಳೀಯ ಮಂಡಿಯಲ್ಲಿ ಬೆಲೆ ಖಚಿತಪಡಿಸಿಕೊಳ್ಳಿ.",
+    asksLabel: "ಕಿಸಾನ್ ಸಾಥಿ ಕೇಳುತ್ತಿದ್ದಾರೆ",
+    answerHint: "ಬಟನ್ ಒತ್ತಿ ಹಿಡಿದು ಉತ್ತರಿಸಿ",
   },
   ta: {
     subtitle: "உங்கள் விவசாய உதவியாளர்",
@@ -60,6 +66,8 @@ const UI = {
     errDesc: "உங்கள் இணைய இணைப்பைச் சரிபார்த்து மீண்டும் முயற்சிக்கவும்.",
     retry: "மீண்டும் முயற்சிக்கவும்",
     disclaimer: "மண்டி விலைகள் தோராயமானவை. விற்பனை செய்வதற்கு முன் உள்ளூர் மண்டியில் விலையை உறுதிப்படுத்தவும்.",
+    asksLabel: "கிஸான் சாத்தி கேட்கிறார்",
+    answerHint: "பொத்தானை அழுத்திப் பிடித்து பதிலளிக்கவும்",
   },
 };
 
@@ -71,6 +79,11 @@ export default function App() {
   const [lang, setLang] = useState("hi");
   const [errorMsg, setErrorMsg] = useState("");
   const [result, setResult] = useState(null);
+  // Clarification-turn conversation state (server is stateless; the client
+  // keeps history + clarifyCount and sends them with each /ask request).
+  const [history, setHistory] = useState([]);
+  const [clarifyCount, setClarifyCount] = useState(0);
+  const [clarify, setClarify] = useState(null);
   const [elapsed, setElapsed] = useState(0);
   const timerRef = useRef(null);
 
@@ -93,17 +106,59 @@ export default function App() {
     return () => { if (result?.audioUrl) URL.revokeObjectURL(result.audioUrl); };
   }, [result]);
 
+  // Revoke old clarification audio URL when it is replaced
+  useEffect(() => {
+    return () => { if (clarify?.audioUrl) URL.revokeObjectURL(clarify.audioUrl); };
+  }, [clarify]);
+
   const fmtTime = (sec) => `${Math.floor(sec / 60)}:${(sec % 60).toString().padStart(2, "0")}`;
 
   const onRecStart = () => setScreen("recording");
   const onRecStop = () => { };
   const onProcessing = () => setScreen("processing");
-  const onResult = (data) => { setResult(data); setScreen("response"); };
-  const onError = (msg) => { setErrorMsg(msg); setScreen("error"); };
+  const onResult = (data) => {
+    const turnType = data.turnType || "answer";
+    if (turnType === "clarify") {
+      // Clarification turn: back to the idle/home layout with a card above
+      // the mic showing the assistant's spoken question. AudioPlayer
+      // auto-plays the clarification audio; its play/pause is the replay.
+      if (clarify?.audioUrl) URL.revokeObjectURL(clarify.audioUrl);
+      if (data.clarifyReason !== "low_confidence" && data.transcriptB64 && data.answerB64) {
+        // Never append unreliable transcripts to history.
+        const userText = decodeBase64Utf8(data.transcriptB64);
+        const assistantText = decodeBase64Utf8(data.answerB64);
+        setHistory((h) => [...h,
+          { role: "user", text: userText },
+          { role: "assistant", text: assistantText },
+        ].slice(-6));
+      }
+      setClarifyCount((c) => c + 1);
+      setClarify({ audioUrl: data.audioUrl, answerB64: data.answerB64, reason: data.clarifyReason });
+      setResult(null);
+      setScreen("idle");
+      return;
+    }
+    // Resolved answer: existing response screen, conversation cleared.
+    if (clarify?.audioUrl) URL.revokeObjectURL(clarify.audioUrl);
+    setClarify(null);
+    setHistory([]);
+    setClarifyCount(0);
+    setResult(data);
+    setScreen("response");
+  };
+  const onError = (msg) => {
+    console.log("[App] onError called with:", msg);
+    setErrorMsg(msg);
+    setScreen("error");
+  };
 
   const reset = () => {
     if (result?.audioUrl) URL.revokeObjectURL(result.audioUrl);
+    if (clarify?.audioUrl) URL.revokeObjectURL(clarify.audioUrl);
     setResult(null);
+    setClarify(null);
+    setHistory([]);
+    setClarifyCount(0);
     setErrorMsg("");
     setScreen("idle");
   };
@@ -139,10 +194,31 @@ export default function App() {
             )}
 
             <VoiceRecorder
-              lang={lang} pincode="560001" isRecording={screen === "recording"}
+              lang={lang} pincode="560001" history={history} clarifyCount={clarifyCount}
+              isRecording={screen === "recording"}
               onRecordingStart={onRecStart} onRecordingStop={onRecStop}
               onProcessing={onProcessing} onResult={onResult} onError={onError}
             />
+
+            {screen === "idle" && clarify && (
+              <div className="w-full max-w-xs mt-6 bg-white rounded-2xl px-5 py-4 shadow-sm fade-in">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-xs">
+                    🌾
+                  </span>
+                  <span className="text-xs font-bold text-primary uppercase tracking-wide">
+                    {s.asksLabel}
+                  </span>
+                </div>
+                <p className="text-text text-base leading-relaxed mb-3">
+                  {decodeBase64Utf8(clarify.answerB64)}
+                </p>
+                <AudioPlayer audioUrl={clarify.audioUrl} />
+                <p className="text-xs text-text/40 text-center font-medium mt-3">
+                  {s.answerHint}
+                </p>
+              </div>
+            )}
 
             {screen === "idle" && (
               <>

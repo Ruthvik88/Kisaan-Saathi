@@ -5,6 +5,8 @@ const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 export default function VoiceRecorder({
   lang,
   pincode = "560001",
+  history = [],
+  clarifyCount = 0,
   isRecording,
   onRecordingStart,
   onRecordingStop,
@@ -58,6 +60,8 @@ export default function VoiceRecorder({
         formData.append("audio", audioBlob, "question.webm");
         formData.append("lang", lang);
         formData.append("pincode", pincode);
+        formData.append("history", JSON.stringify(history || []));
+        formData.append("clarify_count", String(clarifyCount ?? 0));
 
         const response = await fetch(`${API_URL}/ask`, {
           method: "POST",
@@ -78,11 +82,13 @@ export default function VoiceRecorder({
 
         const transcriptB64 = response.headers.get("X-Transcript") || "";
         const answerB64 = response.headers.get("X-Answer") || "";
+        const turnType = response.headers.get("X-Turn-Type") || "answer";
+        const clarifyReason = response.headers.get("X-Clarify-Reason") || "";
 
         const blob = await response.blob();
         const audioUrl = URL.createObjectURL(blob);
 
-        onResultRef.current({ audioUrl, transcriptB64, answerB64 });
+        onResultRef.current({ audioUrl, transcriptB64, answerB64, turnType, clarifyReason });
       } catch (err) {
         if (err.name === "TypeError") {
           onErrorRef.current(
@@ -94,7 +100,7 @@ export default function VoiceRecorder({
         }
       }
     },
-    [lang, pincode]
+    [lang, pincode, history, clarifyCount]
   );
 
   // The ONE and ONLY place recorder.onstop is defined. Handles stopping
@@ -157,13 +163,26 @@ export default function VoiceRecorder({
   }, []);  // ← stable: no deps that change across renders
 
   const startRecording = useCallback(async () => {
+    console.log("[VoiceRecorder] startRecording called");
     if (activeRef.current) return;
     activeRef.current = true;
     startTimeRef.current = Date.now();
     chunksRef.current = [];
 
     try {
+      console.log("[VoiceRecorder] Requesting microphone permission via getUserMedia...");
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      
+      console.log("[VoiceRecorder] getUserMedia succeeded:", {
+        stream,
+        audioTracks: stream.getAudioTracks().map(t => ({
+          label: t.label,
+          enabled: t.enabled,
+          muted: t.muted,
+          readyState: t.readyState,
+          id: t.id,
+        })),
+      });
       
       // If the user released the button while we were asking for permissions,
       // clean up immediately and don't start recording.
@@ -176,11 +195,18 @@ export default function VoiceRecorder({
 
       const mimeType = getSupportedMime();
       mimeTypeRef.current = mimeType;
+      console.log("[VoiceRecorder] Selected mimeType:", mimeType);
 
-      const recorder = new MediaRecorder(
-        stream,
-        mimeType ? { mimeType } : undefined
-      );
+      let recorder;
+      try {
+        recorder = new MediaRecorder(
+          stream,
+          mimeType ? { mimeType } : undefined
+        );
+      } catch (mrErr) {
+        console.error("[VoiceRecorder] MediaRecorder construction failed:", mrErr.name, mrErr.message, mrErr);
+        throw mrErr;
+      }
       mediaRecorderRef.current = recorder;
 
       recorder.ondataavailable = (e) => {
@@ -194,6 +220,7 @@ export default function VoiceRecorder({
       recorder.start(250);
       onRecordingStartRef.current();
     } catch (err) {
+      console.error("[VoiceRecorder] startRecording failed:", err.name, err.message, err);
       activeRef.current = false;
       if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
         onErrorRef.current(

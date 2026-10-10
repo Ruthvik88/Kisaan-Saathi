@@ -7,3 +7,4 @@ gTTS==2.5.3
 requests==2.32.3
 python-multipart==0.0.9
 python-dotenv==1.0.1
+slowapi==0.1.9
